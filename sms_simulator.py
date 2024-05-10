@@ -5,8 +5,7 @@ import argparse
 import time
 import numpy as np
 import curses
-from threading import Thread
-from threading import Lock
+from threading import Thread, Lock
 
 class Message:
     def __init__(self, message: str=None, recipient: str=None):
@@ -33,6 +32,7 @@ class Sender:
 
     def __init__(self, mean_delay: float, failure_rate: float, messages: list[Message]):
         std_deviation = 1
+        # gamma distribution doesn't take a mean and standard deviation, instead need to compute scale and shape parameters
         # derived from properties of gamma distribution: shape * scale = mean, and mean*scale = std_deviation
         self.__shape = (mean_delay ** 2) / std_deviation
         self.__scale = std_deviation / mean_delay
@@ -47,6 +47,7 @@ class Sender:
         self.__elapsed_time = 0.0
         self.__elapsed_time_denominator = 0
 
+        # public variable for monitor to keep track of state
         self.is_sending = False
 
 
@@ -64,6 +65,7 @@ class Sender:
         self.is_sending = False
 
     async def send(self, message: Message) -> bool:
+        # gamma distribution typically arises when plotting delays of events in a poisson process so it serves as a nice model for our purposes here
         delay = np.random.gamma(self.__shape, self.__scale)
         await asyncio.sleep(delay)
 
@@ -93,6 +95,7 @@ class Monitor:
 
     async def monitor(self):
         last_pass = False
+        # Need to ensure that one last pass is performed after the senders finish up to ensure all data has been gathered
         while (actively_sending := any(sender.is_sending for sender in self.__tracked_senders)) or not last_pass:
             last_pass = not actively_sending
             for sender in self.__tracked_senders:
@@ -115,6 +118,7 @@ class Monitor:
 def main(window, args: argparse.Namespace):
     producer = Producer(args.messages)
 
+    # evenly divide up the produced messages
     chunked_messages = np.array_split(producer.produce(), args.senders)
 
     senders = [Sender(args.delay, args.failure_rate, messages) for messages in chunked_messages]
